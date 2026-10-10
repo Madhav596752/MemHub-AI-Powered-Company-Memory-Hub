@@ -7,4 +7,6 @@ dist/
 build/
 *.log
 npm-debug.log*
-.DS_Store
+.DS_Store__pycache__/
+*.py[cod]
+.pytest_cache/
