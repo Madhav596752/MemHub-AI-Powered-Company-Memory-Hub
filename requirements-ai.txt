@@ -1,3 +1,13 @@
+```text
+# Document processing
 pypdf>=5.0.0
 python-docx>=1.1.0
+
+# Embeddings
+numpy>=1.24.0
+torch>=2.0.0
+sentence-transformers>=2.2.2
+
+# Testing
 pytest>=8.0.0
+```

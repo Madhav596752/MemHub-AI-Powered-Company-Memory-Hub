@@ -1,17 +1,21 @@
-<<<<<<< HEAD
+```gitignore
+# Frontend
 node_modules/
+dist/
+build/
+
+# Environment variables
 .env
 .env.*
 !.env.example
 
-dist/
-build/
+# Logs and OS files
 *.log
 npm-debug.log*
 .DS_Store
-=======
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
-node_modules/
->>>>>>> ai/module-1-document-processing
+```
