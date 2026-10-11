@@ -1,0 +1,14 @@
+# Core dependencies for test suite and transcript processing
+pytest>=7.4.0
+
+# Speech-to-text audio transcription dependencies (optional for text-only processing)
+# Install torch and openai-whisper to run local Whisper models:
+#   pip install -r ai/transcription/requirements.txt
+#
+# Note: Audio decoding also requires ffmpeg installed on your system:
+#   Ubuntu/Debian: sudo apt-get install -y ffmpeg
+#   macOS:         brew install ffmpeg
+#   Windows:       choco install ffmpeg / winget install Gyan.FFmpeg
+#
+# torch>=2.0.0
+# openai-whisper>=20231117
