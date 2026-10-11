@@ -1,0 +1,8 @@
+MemHub Core Architecture Specifications
+
+Document Ingestion and Parsing:
+Incoming organizational files are processed by Module 1: Document Processing Pipeline.
+The pipeline extracts text page by page or record by record, preserving semantic metadata.
+Punctuation, code tokens, and case distinctions are retained to maintain embedding accuracy.
+For API specifications, visit https://docs.memhub.internal/v1/api.
+Ensure ENVIRONMENT=production and DB_MAX_CONNECTIONS=50 are set.
