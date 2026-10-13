@@ -4,6 +4,7 @@ import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import DashboardLayout from "@/components/DashboardLayout";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import Dashboard from "@/pages/Dashboard";
 import AIAssistant from "@/pages/AIAssistant";
 import KnowledgeBase from "@/pages/KnowledgeBase";
@@ -20,15 +21,17 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route element={<DashboardLayout />}>
-          <Route path="/app" element={<Dashboard />} />
-          <Route path="/app/assistant" element={<AIAssistant />} />
-          <Route path="/app/knowledge" element={<KnowledgeBase />} />
-          <Route path="/app/documents" element={<Documents />} />
-          <Route path="/app/graph" element={<KnowledgeGraphPage />} />
-          <Route path="/app/search" element={<SearchPage />} />
-          <Route path="/app/analytics" element={<Analytics />} />
-          <Route path="/app/settings" element={<Settings />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<DashboardLayout />}>
+            <Route path="/app" element={<Dashboard />} />
+            <Route path="/app/assistant" element={<AIAssistant />} />
+            <Route path="/app/knowledge" element={<KnowledgeBase />} />
+            <Route path="/app/documents" element={<Documents />} />
+            <Route path="/app/graph" element={<KnowledgeGraphPage />} />
+            <Route path="/app/search" element={<SearchPage />} />
+            <Route path="/app/analytics" element={<Analytics />} />
+            <Route path="/app/settings" element={<Settings />} />
+          </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

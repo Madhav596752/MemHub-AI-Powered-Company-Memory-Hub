@@ -16,7 +16,7 @@ export default function DashboardLayout() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <div className="absolute inset-y-0 left-0 h-full w-[260px] bg-card border-r border-border">
-            <Sidebar collapsed={false} onToggle={() => setMobileOpen(false)} />
+            <Sidebar mobile collapsed={false} onToggle={() => setMobileOpen(false)} onNavigate={() => setMobileOpen(false)} />
           </div>
         </div>
       )}

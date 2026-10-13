@@ -8,9 +8,6 @@ import {
   Layers,
   Cpu,
   Check,
-  Github,
-  Twitter,
-  Linkedin,
 } from "lucide-react";
 import Logo from "@/components/Logo";
 import { Button } from "@/components/ui/button";
@@ -135,9 +132,9 @@ export default function Landing() {
                 Get Started <ArrowRight className="h-4 w-4 ml-1.5" />
               </Button>
             </Link>
-            <Link to="/app">
+            <Link to="/login">
               <Button size="lg" variant="outline" className="rounded-full h-11 px-6 border-border">
-                Explore Demo
+                Sign in
               </Button>
             </Link>
           </div>
@@ -278,9 +275,9 @@ export default function Landing() {
                     Get Started free <ArrowRight className="h-4 w-4 ml-1.5" />
                   </Button>
                 </Link>
-                <Link to="/app">
+                <Link to="/login">
                   <Button size="lg" variant="outline" className="rounded-full h-11 px-6 border-border">
-                    Explore Demo
+                    Sign in
                   </Button>
                 </Link>
               </div>
@@ -302,11 +299,6 @@ export default function Landing() {
           <div className="flex items-center gap-4">
             <Logo />
             <span className="text-xs text-muted-foreground font-mono">© 2026 MemHub Labs</span>
-          </div>
-          <div className="flex items-center gap-1 text-muted-foreground">
-            <a href="#" className="p-2 rounded-md hover:bg-secondary hover:text-foreground transition-colors"><Github className="h-4 w-4" /></a>
-            <a href="#" className="p-2 rounded-md hover:bg-secondary hover:text-foreground transition-colors"><Twitter className="h-4 w-4" /></a>
-            <a href="#" className="p-2 rounded-md hover:bg-secondary hover:text-foreground transition-colors"><Linkedin className="h-4 w-4" /></a>
           </div>
         </div>
       </footer>

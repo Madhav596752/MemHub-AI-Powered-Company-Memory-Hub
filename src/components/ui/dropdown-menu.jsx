@@ -2,7 +2,7 @@ import { cloneElement, createContext, useContext, useEffect, useRef, useState } 
 
 const DropdownContext = createContext(null);
 
-export function DropdownMenu({ children }) {
+export function DropdownMenu({ className = "relative inline-block", children }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
 
@@ -17,7 +17,7 @@ export function DropdownMenu({ children }) {
 
   return (
     <DropdownContext.Provider value={{ open, setOpen }}>
-      <div ref={rootRef} className="relative inline-block">
+      <div ref={rootRef} className={className}>
         {children}
       </div>
     </DropdownContext.Provider>
