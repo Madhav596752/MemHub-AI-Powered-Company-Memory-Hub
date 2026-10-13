@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ResponsiveContainer,
@@ -8,10 +9,12 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-import { Sparkles, ArrowRight, Upload, MessageSquare, Cpu, GitBranch } from "lucide-react";
+import { Sparkles, ArrowRight, Upload, MessageSquare, Cpu, GitBranch, FileText } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
-import { currentUser, stats, knowledgeOverview, recentActivity, promptSuggestions, knowledgeItems } from "@/data/mockData";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/api";
+import { stats, knowledgeOverview, recentActivity, promptSuggestions } from "@/data/mockData";
 
 const iconMap = { Upload, MessageSquare, Cpu, GitBranch };
 const activityColor = {
@@ -20,6 +23,10 @@ const activityColor = {
   query: "bg-purple-500/10 border-purple-500/20 text-purple-400",
   graph: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
 };
+
+function formatDate(iso) {
+  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
 
 function greeting() {
   const h = new Date().getHours();
@@ -30,13 +37,37 @@ function greeting() {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  // Recently added knowledge = the newest real documents of the user's company.
+  // Same endpoint as the Documents page; the server filters by the token's companyId.
+  const [recentDocs, setRecentDocs] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(true);
+  const [docsError, setDocsError] = useState("");
+
+  async function loadRecentDocs() {
+    setDocsLoading(true);
+    try {
+      const data = await api("/api/documents");
+      setRecentDocs(data.documents.slice(0, 6)); // API already returns newest first
+      setDocsError("");
+    } catch (err) {
+      setDocsError(err.message);
+    } finally {
+      setDocsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadRecentDocs();
+  }, []);
 
   return (
     <div className="p-6 md:p-8 max-w-[1400px] mx-auto space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-3xl md:text-4xl font-semibold tracking-tighter">
-          {greeting()}, {currentUser.name.split(" ")[0]} <span className="inline-block">👋</span>
+          {greeting()}, {user?.name?.split(" ")[0]} <span className="inline-block">👋</span>
         </h1>
         <p className="mt-2 text-muted-foreground">
           Here's what's happening with your company knowledge.
@@ -49,18 +80,13 @@ export default function Dashboard() {
           <Sparkles className="h-4 w-4" strokeWidth={1.75} />
           <span className="font-medium">Ask MemHub</span>
         </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            navigate("/app/assistant");
-          }}
-          className="mt-3 flex items-center gap-2"
-        >
+        <form onSubmit={(e) => e.preventDefault()} className="mt-3 flex items-center gap-2">
           <input
-            placeholder="Ask anything about your company…"
-            className="flex-1 h-12 rounded-xl bg-secondary/50 border border-border px-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition-colors"
+            disabled
+            placeholder="AI Assistant is coming in a later phase"
+            className="flex-1 h-12 rounded-xl bg-secondary/50 border border-border px-4 text-sm opacity-60 cursor-not-allowed"
           />
-          <Button type="submit" className="h-12 px-5 rounded-xl">
+          <Button type="submit" disabled title="Coming in a later phase" className="h-12 px-5 rounded-xl">
             Ask <ArrowRight className="h-4 w-4 ml-1.5" />
           </Button>
         </form>
@@ -68,8 +94,10 @@ export default function Dashboard() {
           {promptSuggestions.map((s) => (
             <button
               key={s}
-              onClick={() => navigate("/app/assistant")}
-              className="text-xs font-mono px-3 py-1.5 rounded-full border border-border bg-background/50 text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+              type="button"
+              disabled
+              title="Coming in a later phase"
+              className="text-xs font-mono px-3 py-1.5 rounded-full border border-border bg-background/50 text-muted-foreground opacity-60 cursor-not-allowed"
             >
               {s}
             </button>
@@ -160,23 +188,40 @@ export default function Dashboard() {
       <div className="rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold tracking-tight">Recently Added Knowledge</h2>
-          <Button variant="ghost" size="sm" onClick={() => navigate("/app/knowledge")}>
+          <Button variant="ghost" size="sm" onClick={() => navigate("/app/documents")}>
             View all <ArrowRight className="h-3.5 w-3.5 ml-1" />
           </Button>
         </div>
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {knowledgeItems.slice(0, 6).map((k) => (
-            <div key={k.id} className="rounded-xl border border-border bg-background/50 p-4 hover:border-primary/40 transition-colors">
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-primary">{k.type}</p>
-              <h3 className="mt-2 text-sm font-medium tracking-tight line-clamp-1">{k.title}</h3>
-              <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{k.description}</p>
-              <div className="mt-3 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-                <span>{k.author}</span>
-                <span>{k.chunks} chunks</span>
+        {docsLoading ? (
+          <p className="mt-4 text-center text-muted-foreground font-mono text-xs py-6">Loading documents…</p>
+        ) : docsError ? (
+          <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive text-sm px-4 py-3 flex items-center justify-between gap-4">
+            <span>{docsError}</span>
+            <Button variant="outline" size="sm" onClick={loadRecentDocs}>Retry</Button>
+          </div>
+        ) : recentDocs.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-dashed border-border p-8 text-center">
+            <FileText className="h-5 w-5 mx-auto text-muted-foreground" strokeWidth={1.75} />
+            <p className="mt-3 text-sm font-medium">No documents yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">Upload your first PDF, DOCX or TXT file to see it here.</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate("/app/documents")}>
+              Go to Documents
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {recentDocs.map((d) => (
+              <div key={d.id} className="rounded-xl border border-border bg-background/50 p-4 hover:border-primary/40 transition-colors">
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-primary">{d.fileType}</p>
+                <h3 className="mt-2 text-sm font-medium tracking-tight line-clamp-1" title={d.originalName}>{d.originalName}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Uploaded {formatDate(d.createdAt)}</p>
+                <div className="mt-3 flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+                  <span className="truncate">By {d.uploader?.name || "—"}</span>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

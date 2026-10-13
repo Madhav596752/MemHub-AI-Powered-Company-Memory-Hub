@@ -16,7 +16,7 @@ import {
   LogOut,
 } from "lucide-react";
 import Logo from "@/components/Logo";
-import { currentUser } from "@/data/mockData";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,16 +35,33 @@ const primaryNav = [
   { to: "/app/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
+// Workspace sections belong to a later phase, so they are shown disabled
 const workspaceNav = [
-  { to: "/app", label: "My Workspace", icon: FolderOpen },
-  { to: "/app", label: "Team Knowledge", icon: Users },
+  { label: "My Workspace", icon: FolderOpen },
+  { label: "Team Knowledge", icon: Users },
 ];
 
-function NavItem({ item, collapsed }) {
+function DisabledNavItem({ item, collapsed }) {
+  return (
+    <div
+      title={`${item.label} — coming in a later phase`}
+      aria-disabled="true"
+      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground opacity-50 cursor-not-allowed ${
+        collapsed ? "justify-center px-0" : ""
+      }`}
+    >
+      <item.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
+      {!collapsed && <span className="truncate">{item.label}</span>}
+    </div>
+  );
+}
+
+function NavItem({ item, collapsed, onNavigate }) {
   return (
     <NavLink
       to={item.to}
       end={item.end}
+      onClick={onNavigate}
       title={collapsed ? item.label : undefined}
       className={({ isActive }) =>
         `group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-secondary/60 ${
@@ -65,12 +82,25 @@ function NavItem({ item, collapsed }) {
   );
 }
 
-export default function Sidebar({ collapsed, onToggle }) {
+export default function Sidebar({ collapsed, onToggle, mobile = false, onNavigate }) {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const initials = (user?.name || "?")
+    .split(" ")
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  const handleLogout = () => {
+    onNavigate?.();
+    logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
       <aside
-        className={`hidden md:flex flex-col border-r border-border bg-card/40 h-screen sticky top-0 transition-[width] duration-200 ${
+        className={`${mobile ? "flex" : "hidden md:flex"} flex-col border-r border-border bg-card/40 h-screen h-dvh sticky top-0 transition-[width] duration-200 ${
           collapsed ? "w-[68px]" : "w-[248px]"
         }`}
       >
@@ -95,7 +125,7 @@ export default function Sidebar({ collapsed, onToggle }) {
               </p>
             )}
             {primaryNav.map((item) => (
-              <NavItem key={item.label} item={item} collapsed={collapsed} />
+              <NavItem key={item.label} item={item} collapsed={collapsed} onNavigate={onNavigate} />
             ))}
           </div>
 
@@ -106,7 +136,7 @@ export default function Sidebar({ collapsed, onToggle }) {
               </p>
             )}
             {workspaceNav.map((item) => (
-              <NavItem key={item.label} item={item} collapsed={collapsed} />
+              <DisabledNavItem key={item.label} item={item} collapsed={collapsed} />
             ))}
           </div>
         </nav>
@@ -115,44 +145,49 @@ export default function Sidebar({ collapsed, onToggle }) {
           <NavItem
             item={{ to: "/app/settings", label: "Settings", icon: Settings }}
             collapsed={collapsed}
+            onNavigate={onNavigate}
           />
-          <NavItem
-            item={{ to: "/app", label: "Help", icon: HelpCircle }}
-            collapsed={collapsed}
-          />
+          <DisabledNavItem item={{ label: "Help", icon: HelpCircle }} collapsed={collapsed} />
           {collapsed ? (
-            <button
-              onClick={onToggle}
-              className="w-full flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
-              aria-label="Expand sidebar"
-            >
-              <ChevronsRight className="h-4 w-4" strokeWidth={1.75} />
-            </button>
+            <>
+              <button
+                onClick={onToggle}
+                className="w-full flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
+                aria-label="Expand sidebar"
+              >
+                <ChevronsRight className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+              <button
+                onClick={handleLogout}
+                title="Logout"
+                className="w-full flex items-center justify-center p-2 rounded-lg text-muted-foreground hover:bg-secondary hover:text-destructive"
+                aria-label="Logout"
+              >
+                <LogOut className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            </>
           ) : (
-            <DropdownMenu>
+            <DropdownMenu className="relative block w-full">
               <DropdownMenuTrigger>
                 <button
                   className="w-full mt-2 flex items-center gap-3 rounded-lg p-2 hover:bg-secondary text-left transition-colors"
                 >
                   <div className="h-8 w-8 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-primary text-xs font-semibold">
-                    {currentUser.avatarInitials}
+                    {initials}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{currentUser.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{currentUser.company}</p>
+                    <p className="text-sm font-medium truncate">{user?.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user?.companyName}</p>
                   </div>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="end" className="w-56">
-                <DropdownMenuItem onClick={() => navigate("/app/settings")}>
+              <DropdownMenuContent side="top" align="start" className="w-full">
+                <DropdownMenuItem onClick={() => { onNavigate?.(); navigate("/app/settings"); }}>
                   <Settings className="h-4 w-4 mr-2" /> Settings
                 </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <HelpCircle className="h-4 w-4 mr-2" /> Help & docs
-                </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate("/")} className="text-destructive focus:text-destructive">
-                  <LogOut className="h-4 w-4 mr-2" /> Sign out
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+                  <LogOut className="h-4 w-4 mr-2" /> Logout
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Bell, Command, Menu } from "lucide-react";
+import { Search, Bell, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import ThemeToggle from "@/components/ThemeToggle";
 
@@ -32,22 +32,21 @@ export default function Topbar({ onOpenMobileNav }) {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search knowledge, docs, people…"
-              className="w-full h-10 pl-9 pr-16 text-sm rounded-lg bg-secondary/50 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition-colors"
+              className="w-full h-10 pl-9 pr-3 text-sm rounded-lg bg-secondary/50 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition-colors"
             />
-            <span className="absolute right-3 hidden sm:flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
-              <Command className="h-3 w-3" /> K
-            </span>
           </label>
         </form>
 
         <div className="ml-auto flex items-center gap-1">
           <ThemeToggle />
           <button
-            className="relative p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            aria-label="Notifications"
+            type="button"
+            disabled
+            title="Notifications are coming in a later phase"
+            className="relative p-2 rounded-md text-muted-foreground opacity-50 cursor-not-allowed"
+            aria-label="Notifications (coming soon)"
           >
             <Bell className="h-4 w-4" strokeWidth={1.75} />
-            <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-cyan-400" />
           </button>
         </div>
       </div>

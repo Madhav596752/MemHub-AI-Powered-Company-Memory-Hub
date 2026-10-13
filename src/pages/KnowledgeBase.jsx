@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import EmptyState from "@/components/EmptyState";
 import { knowledgeItems, knowledgeTypes } from "@/data/mockData";
 
-const sortOptions = ["Recently Added", "Most Viewed"];
+const sortOptions = ["Recently Added", "Most Chunks"];
 
 export default function KnowledgeBase() {
   const [q, setQ] = useState("");
@@ -16,7 +16,7 @@ export default function KnowledgeBase() {
     if (type !== "All") arr = arr.filter((i) => i.type === type);
     if (q) arr = arr.filter((i) => (i.title + i.description + i.tags.join(" ")).toLowerCase().includes(q.toLowerCase()));
     arr = [...arr];
-    if (sort === "Most Viewed") arr.sort((a, b) => b.chunks - a.chunks);
+    if (sort === "Most Chunks") arr.sort((a, b) => b.chunks - a.chunks);
     else arr.sort((a, b) => new Date(b.date) - new Date(a.date));
     return arr;
   }, [q, type, sort]);
@@ -82,7 +82,7 @@ export default function KnowledgeBase() {
             </div>
             <div className="mt-5 pt-4 border-t border-border flex items-center justify-between">
               <p className="text-xs text-muted-foreground font-mono">{k.author} · <span className="text-primary">{k.chunks} chunks</span></p>
-              <Button variant="ghost" size="sm" className="h-8">
+              <Button variant="ghost" size="sm" className="h-8" disabled title="Viewing knowledge items is coming in a later phase">
                 <Eye className="h-3.5 w-3.5 mr-1" /> View
               </Button>
             </div>

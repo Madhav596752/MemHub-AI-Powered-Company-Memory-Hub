@@ -9,7 +9,6 @@ export default function SearchPage() {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(params.get("q") || "authentication");
   const [filter, setFilter] = useState("All");
-  const [mode, setMode] = useState("semantic");
 
   const results = useMemo(() => {
     let arr = searchResults;
@@ -31,20 +30,22 @@ export default function SearchPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search your company's memory…"
-          className="w-full h-14 pl-11 pr-32 text-base rounded-2xl bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition-colors"
+          className="w-full h-14 pl-11 pr-44 text-base rounded-2xl bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition-colors"
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-lg border border-border bg-secondary/50 p-1">
           <button
             type="button"
-            onClick={() => setMode("keyword")}
-            className={`px-3 py-1.5 text-xs font-mono rounded-md flex items-center gap-1 ${mode === "keyword" ? "bg-card text-foreground" : "text-muted-foreground"}`}
+            disabled
+            title="Keyword search is coming in a later phase"
+            className="px-3 py-1.5 text-xs font-mono rounded-md flex items-center gap-1 text-muted-foreground opacity-50 cursor-not-allowed"
           >
             <KeyRound className="h-3 w-3" /> Keyword
           </button>
           <button
             type="button"
-            onClick={() => setMode("semantic")}
-            className={`px-3 py-1.5 text-xs font-mono rounded-md flex items-center gap-1 ${mode === "semantic" ? "bg-card text-primary" : "text-muted-foreground"}`}
+            disabled
+            title="Semantic search is coming in a later phase"
+            className="px-3 py-1.5 text-xs font-mono rounded-md flex items-center gap-1 text-muted-foreground opacity-50 cursor-not-allowed"
           >
             <Sparkles className="h-3 w-3" /> Semantic
           </button>
@@ -66,7 +67,7 @@ export default function SearchPage() {
       </div>
 
       <div className="space-y-3">
-        <p className="text-xs font-mono text-muted-foreground">{results.length} results · {mode === "semantic" ? "Semantic" : "Keyword"} search</p>
+        <p className="text-xs font-mono text-muted-foreground">{results.length} sample results · real search is coming in a later phase</p>
         {results.map((r) => (
           <article key={r.id} className="rounded-2xl border border-border bg-card p-5 hover:border-primary/40 transition-colors">
             <div className="flex items-start justify-between gap-4">

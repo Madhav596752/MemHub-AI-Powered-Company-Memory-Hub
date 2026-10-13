@@ -1,13 +1,5 @@
 // Realistic mock data for MemHub
 
-export const currentUser = {
-  name: "Madhav Sharma",
-  email: "madhav@acme.co",
-  company: "Acme Labs",
-  role: "Engineering Lead",
-  avatarInitials: "MS",
-};
-
 export const stats = [
   { label: "Total Documents", value: "1,284", delta: "+12.4%", trend: "up", icon: "FileText" },
   { label: "Knowledge Chunks", value: "38.6K", delta: "+8.1%", trend: "up", icon: "Layers" },

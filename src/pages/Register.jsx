@@ -5,6 +5,7 @@ import Logo from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 function scorePassword(pw) {
   let s = 0;
@@ -26,20 +27,31 @@ const strengthMeta = [
 
 export default function Register() {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", company: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", company: "", inviteCode: "" });
   const strength = useMemo(() => scorePassword(form.password), [form.password]);
   const match = form.password && form.password === form.confirm;
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (!match) return toast.error("Passwords don't match");
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await register({
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        companyName: form.company,
+        inviteCode: form.inviteCode,
+      });
       toast.success("Welcome to MemHub");
       navigate("/app");
-    }, 700);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -59,16 +71,27 @@ export default function Register() {
                   <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Full name</label>
                   <div className="mt-2 relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
-                    <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="pl-9 h-11" placeholder="Madhav Sharma" />
+                    <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="pl-9 h-11" placeholder="Your full name" />
                   </div>
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Company</label>
                   <div className="mt-2 relative">
                     <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
-                    <Input required value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} className="pl-9 h-11" placeholder="Acme Labs" />
+                    <Input required={!form.inviteCode.trim()} value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} className="pl-9 h-11" placeholder="Your company name" />
                   </div>
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Invite code (optional)</label>
+                <div className="mt-2 relative">
+                  <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
+                  <Input value={form.inviteCode} onChange={(e) => setForm({ ...form, inviteCode: e.target.value })} className="pl-9 h-11" placeholder="Paste it to join an existing company" />
+                </div>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  Joining a teammate's company? Ask your admin for the code (Settings → Workspace). Leave empty to create a new company.
+                </p>
               </div>
 
               <div>

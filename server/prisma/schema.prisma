@@ -1,5 +1,3 @@
-// MemHub database schema — Phase 1A (Company, User, Document only)
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,47 +7,51 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  ADMIN
-  MEMBER
-}
-
 model Company {
   id        String     @id @default(uuid())
   name      String
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
-
-  users     User[]
   documents Document[]
+  users     User[]
 }
 
 model User {
-  id        String   @id @default(uuid())
+  id        String     @id @default(uuid())
   name      String
-  email     String   @unique
+  email     String     @unique
   password  String
-  role      Role     @default(MEMBER)
+  role      Role       @default(MEMBER)
   companyId String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents Document[] @relation("DocumentUploader")
 
   @@index([companyId])
 }
 
 model Document {
-  id        String   @id @default(uuid())
-  companyId String
-  filename  String
-  fileType  String
-  fileSize  Int
-  status    String   @default("PENDING")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id                String   @id @default(uuid())
+  companyId         String
+  uploadedBy        String?
+  originalName      String
+  fileName          String
+  mimeType          String
+  fileSize          Int
+  cloudinaryUrl     String
+  cloudinaryPublicId String
+  extractedText     String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploader          User?    @relation("DocumentUploader", fields: [uploadedBy], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([companyId])
+  @@index([uploadedBy])
+}
+
+enum Role {
+  ADMIN
+  MEMBER
 }

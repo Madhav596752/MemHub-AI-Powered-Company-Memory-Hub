@@ -8,6 +8,8 @@ const router = Router()
 
 const SALT_ROUNDS = 10
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // ---------- helpers ----------
 
 function createAccessToken(user) {
@@ -43,11 +45,18 @@ function isValidEmail(email) {
 }
 
 // ---------- POST /api/auth/register ----------
-// Creates a new company and makes this person its ADMIN.
-// companyId and role are NOT accepted from the client.
+// Two ways to register:
+//   1. No inviteCode: creates a NEW company and makes this person its ADMIN.
+//   2. With inviteCode (the company's ID, shown to admins in Settings -> Workspace):
+//      joins that EXISTING company as a MEMBER, so the whole team shares one companyId.
+// role is NEVER accepted from the client. The invite code is a random UUID, so it
+// cannot be guessed; typing a company name never joins an existing company.
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, companyName } = req.body || {}
+    const { name, email, password, companyName, inviteCode } = req.body || {}
+
+    const code = typeof inviteCode === 'string' ? inviteCode.trim() : ''
+    const joining = code.length > 0
 
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ message: 'Name is required' })
@@ -61,10 +70,14 @@ router.post('/register', async (req, res) => {
     if (password.length > 72) {
       return res.status(400).json({ message: 'Password must be at most 72 characters' })
     }
-    if (typeof companyName !== 'string' || !companyName.trim()) {
+    if (!joining && (typeof companyName !== 'string' || !companyName.trim())) {
       return res.status(400).json({ message: 'Company name is required' })
     }
-    if (name.trim().length > 100 || companyName.trim().length > 100 || email.trim().length > 254) {
+    if (
+      name.trim().length > 100 ||
+      (typeof companyName === 'string' && companyName.trim().length > 100) ||
+      email.trim().length > 254
+    ) {
       return res.status(400).json({ message: 'Name, company name or email is too long' })
     }
 
@@ -75,22 +88,48 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ message: 'An account with this email already exists' })
     }
 
+    // Joining an existing company: the invite code must match a real company
+    let joinCompany = null
+    if (joining) {
+      if (!UUID_REGEX.test(code)) {
+        return res.status(400).json({ message: 'Invalid invite code' })
+      }
+      joinCompany = await prisma.company.findUnique({ where: { id: code } })
+      if (!joinCompany) {
+        return res.status(400).json({ message: 'Invalid invite code' })
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS)
 
-    // Create company + admin user together (both succeed or both fail)
-    const user = await prisma.$transaction(async (tx) => {
-      const company = await tx.company.create({ data: { name: companyName.trim() } })
-      return tx.user.create({
+    let user
+    if (joinCompany) {
+      user = await prisma.user.create({
         data: {
           name: name.trim(),
           email: cleanEmail,
           password: hashedPassword,
-          role: 'ADMIN',
-          companyId: company.id,
+          role: 'MEMBER',
+          companyId: joinCompany.id,
         },
         include: { company: true },
       })
-    })
+    } else {
+      // Create company + admin user together (both succeed or both fail)
+      user = await prisma.$transaction(async (tx) => {
+        const company = await tx.company.create({ data: { name: companyName.trim() } })
+        return tx.user.create({
+          data: {
+            name: name.trim(),
+            email: cleanEmail,
+            password: hashedPassword,
+            role: 'ADMIN',
+            companyId: company.id,
+          },
+          include: { company: true },
+        })
+      })
+    }
 
     res.status(201).json({
       accessToken: createAccessToken(user),
