@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String     @id @default(uuid())
+  name      String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  documents Document[]
+  users     User[]
+}
+
+model User {
+  id        String     @id @default(uuid())
+  name      String
+  email     String     @unique
+  password  String
+  role      Role       @default(MEMBER)
+  companyId String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents Document[] @relation("DocumentUploader")
+  refreshTokens RefreshToken[]
+
+  @@index([companyId])
+}
+
+model Document {
+  id                String   @id @default(uuid())
+  companyId         String
+  uploadedBy        String?
+  originalName      String
+  fileName          String
+  mimeType          String
+  fileSize          Int
+  cloudinaryUrl     String
+  cloudinaryPublicId String
+  extractedText     String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploader          User?    @relation("DocumentUploader", fields: [uploadedBy], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  graphIngestion    GraphIngestion?
+
+  @@index([companyId])
+  @@index([uploadedBy])
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+// Outcome of the last knowledge-graph processing of a document (NLP -> Neo4j).
+// status: processed | failed | skipped. The graph itself lives in Neo4j; this row only records
+// whether it worked, so failures are visible and can be retried.
+model GraphIngestion {
+  documentId        String    @id
+  companyId         String
+  status            String
+  entityCount       Int       @default(0)
+  relationshipCount Int       @default(0)
+  errorCode         String?
+  pipeline          String?
+  processedAt       DateTime?
+  updatedAt         DateTime  @updatedAt
+  document          Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+}
+
+// One row per issued refresh token. All tokens of one login share a familyId (= one session).
+// Only a keyed hash of the token is stored (never the token itself). A token is single-use:
+// refreshing marks the row revoked (revokeReason = 'rotated') and creates the next row in the same family.
+// revokeReason: rotated | logout | logout-all | reuse-detected
+model RefreshToken {
+  id           String    @id
+  familyId     String
+  userId       String
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  revokeReason String?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+}
