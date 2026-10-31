@@ -12,8 +12,12 @@ import http from 'node:http'
 import jwt from 'jsonwebtoken'
 
 process.env.JWT_ACCESS_SECRET = 'unit-test-access-secret'
+// The rate limiter opens its own Redis connection when REDIS_URL is set at import time and these tests never close it, which would
+// keep the test process alive after the last test (e.g. when REDIS_URL is exported in the developer's shell). These tests do not need Redis.
+delete process.env.REDIS_URL
 process.env.GROQ_API_KEY = 'sk-test-not-a-real-key'
 process.env.LLM_MODEL = 'test-model'
+process.env.RATE_LIMIT_ASK_MAX = '100000' // this file sends many questions as one user; the limit itself is tested in middleware/rateLimit.test.js
 delete process.env.RAG_MIN_SCORE
 delete process.env.RAG_TOP_K
 

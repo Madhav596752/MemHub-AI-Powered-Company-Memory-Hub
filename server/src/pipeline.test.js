@@ -19,14 +19,19 @@ import { randomUUID } from 'node:crypto'
 import jwt from 'jsonwebtoken'
 
 process.env.JWT_ACCESS_SECRET = 'pipeline-test-secret'
+// The rate limiter opens its own Redis connection when REDIS_URL is set at import time and these tests never close it, which would
+// keep the test process alive after the last test (e.g. when REDIS_URL is exported in the developer's shell). These tests do not need Redis.
+delete process.env.REDIS_URL
 process.env.GROQ_API_KEY = 'sk-test-not-a-real-key'
 process.env.EMBEDDING_SERVICE_TOKEN ||= 'pipeline-test-internal-token'
 delete process.env.RAG_MIN_SCORE
 const REAL_VECTOR_URL = process.env.PIPELINE_REAL_VECTOR_URL || ''
 
 // ---------- fake Prisma (same filters as the real queries in the routes) ----------
-const db = { documents: [] }
+const db = { documents: [], users: new Map() }
 const fakePrisma = {
+  // Privileged routes (delete / reindex) re-read the caller's role and company from the database.
+  user: { findUnique: async ({ where }) => db.users.get(where.id) ?? null },
   document: {
     create: async ({ data }) => {
       const doc = { id: randomUUID(), createdAt: new Date(), updatedAt: new Date(), ...data, uploader: { id: data.uploadedBy, name: 'Test User' } }
@@ -184,7 +189,11 @@ function makePdf(lines) {
 
 const COMPANY_A = `company-a-${randomUUID()}`
 const COMPANY_B = `company-b-${randomUUID()}`
-const tokenFor = (companyId) => jwt.sign({ userId: `user-${companyId}`, companyId, role: 'ADMIN' }, process.env.JWT_ACCESS_SECRET)
+const tokenFor = (companyId) => {
+  const user = { id: `user-${companyId}`, companyId, role: 'ADMIN' }
+  db.users.set(user.id, user) // the admin exists in the (fake) database, as in production
+  return jwt.sign({ userId: user.id, companyId, role: user.role }, process.env.JWT_ACCESS_SECRET)
+}
 const tokenA = tokenFor(COMPANY_A)
 const tokenB = tokenFor(COMPANY_B)
 

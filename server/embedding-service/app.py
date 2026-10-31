@@ -32,6 +32,40 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 
+def _load_env_file(allowed: set) -> None:
+    """Reads ONLY the listed keys from server/.env when they are not already in the environment.
+
+    Node loads server/.env through dotenv, but a Python process never does, so a token that sits
+    in .env was invisible here and the two sides disagreed (401). A value exported in the terminal
+    always wins. Nothing is logged except WHICH keys were taken from the file, never their values.
+    """
+    path = Path(__file__).resolve().parent.parent / ".env"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    taken = []
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[7:].strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].strip()
+        if key in allowed and value and not os.environ.get(key, "").strip():
+            os.environ[key] = value
+            taken.append(key)
+    if taken:
+        logging.getLogger("memhub.env").info("Loaded %s from %s", ", ".join(taken), path.name)
+
+
+_load_env_file({"EMBEDDING_SERVICE_TOKEN", "CHROMA_PATH", "EMBEDDING_MAX_BATCH"})
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"  # fixed on purpose; do not change
 DIMENSIONS = 384
 MAX_TEXTS = int(os.getenv("EMBEDDING_MAX_BATCH", "64"))
@@ -48,8 +82,8 @@ CHROMA_PATH = os.path.abspath(os.getenv("CHROMA_PATH") or str(Path(__file__).res
 SERVICE_TOKEN = os.getenv("EMBEDDING_SERVICE_TOKEN", "").strip()
 if not SERVICE_TOKEN:
     raise RuntimeError(
-        "EMBEDDING_SERVICE_TOKEN is not set. Set the same long random value for this service "
-        "and for the Node server (server/.env) so only the Express backend can call it."
+        "EMBEDDING_SERVICE_TOKEN is not set (neither in this terminal nor in server/.env). Set the same "
+        "long random value for this service and for the Node server so only the Express backend can call it."
     )
 
 model = SentenceTransformer(MODEL_NAME)  # downloads once, then cached
@@ -92,7 +126,13 @@ app = FastAPI(title="MemHub embedding service")
 
 def require_token(x_internal_token: str | None = Header(default=None)) -> None:
     """Only the Express backend knows the shared secret (constant-time comparison)."""
-    if not x_internal_token or not hmac.compare_digest(x_internal_token, SERVICE_TOKEN):
+    sent = (x_internal_token or "").strip()
+    if not sent:
+        logger.warning("Rejected request: X-Internal-Token header missing or empty (is EMBEDDING_SERVICE_TOKEN set in server/.env?)")
+        raise HTTPException(status_code=401, detail="missing internal token")
+    if not hmac.compare_digest(sent.encode(), SERVICE_TOKEN.encode()):
+        # Never log either value. Different values on the two sides is the usual cause.
+        logger.warning("Rejected request: X-Internal-Token does not match this service's EMBEDDING_SERVICE_TOKEN")
         raise HTTPException(status_code=401, detail="invalid internal token")
 
 

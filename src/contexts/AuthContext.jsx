@@ -52,13 +52,19 @@ export function AuthProvider({ children }) {
   }
 
   function logout() {
+    // Revoke the session on the server too (best effort: the local logout never waits for it or fails because of it).
+    const refreshToken = localStorage.getItem(REFRESH_KEY);
+    if (refreshToken) {
+      api("/api/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }).catch(() => {});
+    }
     localStorage.removeItem(ACCESS_KEY);
     localStorage.removeItem(REFRESH_KEY);
     setUser(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    // isAdmin only decides which controls to SHOW. The backend re-checks every privileged request.
+    <AuthContext.Provider value={{ user, loading, isAdmin: user?.role === "ADMIN", login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

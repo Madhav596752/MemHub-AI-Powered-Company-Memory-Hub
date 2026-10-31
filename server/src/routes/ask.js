@@ -1,8 +1,12 @@
 import { Router } from 'express'
 import prisma from '../prisma.js'
 import { requireAuth } from '../middleware/auth.js'
+import { askLimiter } from '../middleware/rateLimit.js'
 import { searchChunks, RagError, MAX_SEARCH_LIMIT } from '../utils/vectorStore.js'
-import { LlmError, assertLlmConfigured, buildPrompt, callLlm, parseModelAnswer } from '../utils/llm.js'
+import { LlmError, assertLlmConfigured, buildPrompt, callLlm, llmConfig, parseModelAnswer } from '../utils/llm.js'
+import { graphSettings, mergeGraphIntoContext, retrieveGraphFacts } from '../utils/graphRetrieval.js'
+import { isNeo4jConfigured } from '../utils/neo4j.js'
+import { prepareAskCache } from '../utils/askCache.js'
 
 const router = Router()
 
@@ -32,14 +36,26 @@ function retrievalSettings() {
   }
 }
 
-function notGrounded(reason, message) {
-  return { success: true, grounded: false, reason, answer: message, sources: [] }
+function notGrounded(reason, message, retrieval) {
+  return { success: true, grounded: false, reason, answer: message, sources: [], retrieval }
 }
 
 // ---------- POST /api/ask ----------
 // Body: { "question": "What is our refund policy?" }
 // The company comes from the JWT (req.user.companyId). A companyId in the body is ignored.
-router.post('/', requireAuth, async (req, res) => {
+//
+// HYBRID retrieval: vector chunks (ChromaDB) + knowledge-graph facts (Neo4j, one hop around the
+// entities in those chunks and in the question). Both are filtered by the authenticated company and
+// every source document is checked against PostgreSQL before it can reach the prompt or a citation.
+// The response has the same shape as before plus `retrieval`, which states honestly what each side did:
+//   retrieval.graph.status = 'ok' | 'disabled' (Neo4j not configured) | 'unavailable' (it failed -> vector-only answer)
+//
+// RESPONSE CACHE (Module 9.2, utils/askCache.js): after authentication, and after PostgreSQL has confirmed the
+// caller still belongs to the company, an identical earlier answer may be returned from Redis instead of running
+// the steps below. On a miss, or whenever Redis / the cache is unavailable, the pipeline below runs unchanged and
+// only a complete, grounded, successful answer is stored afterwards. Errors are never cached. The response body
+// is the same either way; the X-Cache header (HIT / MISS) is the only visible difference.
+router.post('/', requireAuth, askLimiter, async (req, res) => {
   try {
     const companyId = req.user?.companyId
     if (typeof companyId !== 'string' || !companyId) {
@@ -58,6 +74,25 @@ router.post('/', requireAuth, async (req, res) => {
     assertLlmConfigured()
 
     const { topK, minScore, maxContextChars } = retrievalSettings()
+    const graphConfig = graphSettings()
+
+    // 0. Response cache. prepareAskCache() returns null (-> plain pipeline) unless Redis is connected, the caller
+    // is confirmed in PostgreSQL and the knowledge-base version is known. Nothing is read from Redis before that.
+    const cache = await prepareAskCache({
+      prisma,
+      user: req.user,
+      question,
+      config: { topK, minScore, maxContextChars, graph: { enabled: isNeo4jConfigured(), ...graphConfig }, model: llmConfig().model },
+    })
+    if (cache) {
+      const cached = await cache.lookup()
+      if (cached) {
+        console.log('[ask] answered from cache')
+        res.set('X-Cache', 'HIT')
+        return res.json(cached)
+      }
+      res.set('X-Cache', 'MISS')
+    }
 
     // 1. Retrieve. The vector database filters by this company itself ...
     const hits = await searchChunks(companyId, question, topK)
@@ -72,13 +107,6 @@ router.post('/', requireAuth, async (req, res) => {
     const names = new Map(docs.map((doc) => [doc.id, doc.originalName]))
     const validHits = hits.filter((hit) => names.has(hit.documentId))
 
-    // A nearest-neighbour search always returns something when the company has ANY vectors,
-    // so zero valid hits means nothing searchable exists for this company.
-    if (validHits.length === 0) {
-      console.warn(`[ask] retrieved=${hits.length} validForCompany=0 -> nothing indexed for this company`)
-      return res.json(notGrounded('not_indexed', NOT_INDEXED_MESSAGE))
-    }
-
     // 3. Keep only relevant chunks, best first, within the context budget.
     const context = []
     let usedChars = 0
@@ -87,6 +115,7 @@ router.post('/', requireAuth, async (req, res) => {
       if (context.length > 0 && usedChars + hit.text.length > maxContextChars) break
       usedChars += hit.text.length
       context.push({
+        kind: 'chunk',
         ref: context.length + 1, // the number the LLM cites, e.g. [1]
         documentId: hit.documentId,
         documentName: names.get(hit.documentId), // from PostgreSQL, not from the vector metadata
@@ -103,27 +132,59 @@ router.post('/', requireAuth, async (req, res) => {
         `scores=[${validHits.map((h) => h.score.toFixed(3)).join(', ')}] keptAsContext=${context.length}`
     )
 
-    // No useful chunks: do not call the LLM at all.
-    if (context.length === 0) {
-      return res.json(notGrounded('no_relevant_match', NO_DOCUMENTS_MESSAGE))
+    // 3b. Knowledge graph: facts around the entities of the kept chunks and of the question.
+    // It never throws; if Neo4j is down the answer is vector-only and `retrieval` says so.
+    const graph = await retrieveGraphFacts({ companyId, question, chunks: context })
+    if (graph.status === 'unavailable') {
+      console.warn(`[ask] graph retrieval unavailable (${graph.code}) -> vector-only answer`)
+    }
+    if (graph.facts.length > 0) {
+      // Same ownership rule as for chunks: a fact whose document is not this company's PostgreSQL
+      // document is dropped before it reaches the prompt or a citation.
+      const unknown = [...new Set(graph.facts.map((f) => f.documentId).filter((id) => typeof id === 'string' && !names.has(id)))]
+      if (unknown.length) {
+        const more = await prisma.document.findMany({ where: { id: { in: unknown }, companyId }, select: { id: true, originalName: true } })
+        for (const doc of more) names.set(doc.id, doc.originalName)
+      }
+    }
+    const merged = mergeGraphIntoContext(context, graph.facts, names, graphConfig)
+    const full = merged.context // vector excerpts first, then graph-only evidence; refs are consecutive
+    const retrieval = {
+      vector: { status: 'ok', chunks: context.length },
+      graph: { status: graph.status, facts: merged.factsUsed },
+    }
+    console.log(`[ask] graph=${graph.status} seeds=${graph.seeds} factsRetrieved=${graph.facts.length} factsUsed=${merged.factsUsed} contextItems=${full.length}`)
+
+    // Nothing at all to answer from. Same two reasons as before:
+    //  - no vector chunk of this company existed (and the graph added nothing) -> nothing is indexed
+    //  - chunks existed but none was similar enough -> no relevant match
+    if (full.length === 0) {
+      if (validHits.length === 0) {
+        console.warn(`[ask] retrieved=${hits.length} validForCompany=0 -> nothing indexed for this company`)
+        return res.json(notGrounded('not_indexed', NOT_INDEXED_MESSAGE, retrieval))
+      }
+      return res.json(notGrounded('no_relevant_match', NO_DOCUMENTS_MESSAGE, retrieval))
     }
 
-    // 4. Ask the LLM, with only the question and the retrieved excerpts.
-    const raw = await callLlm(buildPrompt(question, context))
-    const parsed = parseModelAnswer(raw, context.map((c) => c.ref))
+    // 4. Ask the LLM ONCE, with only the question and the retrieved excerpts / graph evidence.
+    const raw = await callLlm(buildPrompt(question, full))
+    const parsed = parseModelAnswer(raw, full.map((c) => c.ref))
 
     // The model said it cannot answer, or it answered without citing anything real:
     // never present that as a grounded answer.
     if (!parsed.answerable || parsed.refs.length === 0) {
       if (parsed.answerable) console.error('[ask] LLM gave an answer without any valid citation - treated as not grounded')
-      return res.json(notGrounded('not_enough_info', NOT_ENOUGH_MESSAGE))
+      return res.json(notGrounded('not_enough_info', NOT_ENOUGH_MESSAGE, retrieval))
     }
 
-    // 5. Sources are built from the retrieved chunks themselves, looked up by the cited numbers.
+    // 5. Sources are built from the retrieved items themselves, looked up by the cited numbers, so a
+    // citation can never point at something that was not retrieved. kind = 'chunk' (vector excerpt)
+    // or 'graph' (evidence sentence of a graph fact: no score and no offsets, none were stored).
     const sources = parsed.refs.map((ref) => {
-      const c = context[ref - 1]
+      const c = full[ref - 1]
       return {
         ref: c.ref,
+        kind: c.kind,
         documentId: c.documentId,
         documentName: c.documentName,
         chunkIndex: c.chunkIndex,
@@ -131,11 +192,16 @@ router.post('/', requireAuth, async (req, res) => {
         startChar: c.startChar,
         endChar: c.endChar,
         score: c.score,
+        ...(c.graphFacts?.length ? { graphFacts: c.graphFacts } : {}),
       }
     })
 
     console.log(`[ask] answered with ${sources.length} cited source(s)`)
-    res.json({ success: true, grounded: true, answer: parsed.answer, sources })
+    const body = { success: true, grounded: true, answer: parsed.answer, sources, retrieval }
+    res.json(body)
+    // The client already has its answer; storing it never delays or fails the response (store() never throws and
+    // refuses anything that is not a complete, grounded answer, e.g. graph 'unavailable').
+    if (cache) await cache.store(body)
   } catch (err) {
     if (err instanceof RagError || err instanceof LlmError) {
       return res.status(err.status).json({ success: false, message: err.message, code: err.code })

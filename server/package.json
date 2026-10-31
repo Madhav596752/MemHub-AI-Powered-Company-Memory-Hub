@@ -10,7 +10,11 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "test": "node --experimental-test-module-mocks --test \"src/**/*.test.js\"",
-    "reindex": "node scripts/reindex-all.js"
+    "reindex": "node scripts/reindex-all.js",
+    "graph:setup": "node scripts/graph-setup.js",
+    "graph:reprocess": "node scripts/reprocess-graph.js",
+    "test:neo4j": "node --test src/utils/graphStore.integration.test.js",
+    "test:redis": "node --experimental-test-module-mocks --test \"src/**/*.redis.test.js\""
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -19,10 +23,14 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.6",
     "express": "^4.22.3",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "mammoth": "^1.13.0",
     "multer": "^2.4.0",
-    "pdf-parse": "^2.4.5"
+    "neo4j-driver": "^5.28.3",
+    "pdf-parse": "^2.4.5",
+    "redis": "^6.3.0"
   },
   "devDependencies": {
     "prisma": "^6.19.3"

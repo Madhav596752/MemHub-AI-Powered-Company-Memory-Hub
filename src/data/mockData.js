@@ -1,37 +1,5 @@
 // Realistic mock data for MemHub
 
-export const stats = [
-  { label: "Total Documents", value: "1,284", delta: "+12.4%", trend: "up", icon: "FileText" },
-  { label: "Knowledge Chunks", value: "38.6K", delta: "+8.1%", trend: "up", icon: "Layers" },
-  { label: "AI Queries", value: "9,421", delta: "+22.3%", trend: "up", icon: "Sparkles" },
-  { label: "Knowledge Connections", value: "5,847", delta: "+3.9%", trend: "up", icon: "Share2" },
-];
-
-export const analyticsStats = [
-  { label: "Total Knowledge", value: "38.6K", delta: "+8.1%", icon: "Layers" },
-  { label: "Queries This Month", value: "2,140", delta: "+24.4%", icon: "MessageSquare" },
-  { label: "Most Used Doc", value: "Auth Guide", delta: "421 hits", icon: "FileText" },
-  { label: "Search Success", value: "94.2%", delta: "+1.6%", icon: "Target" },
-];
-
-export const knowledgeOverview = [
-  { name: "Mon", docs: 42, chunks: 380, queries: 120 },
-  { name: "Tue", docs: 51, chunks: 460, queries: 180 },
-  { name: "Wed", docs: 63, chunks: 520, queries: 210 },
-  { name: "Thu", docs: 58, chunks: 490, queries: 175 },
-  { name: "Fri", docs: 71, chunks: 610, queries: 260 },
-  { name: "Sat", docs: 34, chunks: 280, queries: 90 },
-  { name: "Sun", docs: 28, chunks: 220, queries: 74 },
-];
-
-export const recentActivity = [
-  { type: "upload", title: "Q3 Product Roadmap.pdf", user: "Priya N.", time: "2m ago", icon: "Upload" },
-  { type: "process", title: "Engineering Meeting — Feb 10", user: "System", time: "12m ago", icon: "Cpu" },
-  { type: "query", title: "\"What are our OKRs for Q1?\"", user: "Aarav K.", time: "38m ago", icon: "MessageSquare" },
-  { type: "graph", title: "Linked Auth Service ↔ JWT Docs", user: "System", time: "1h ago", icon: "GitBranch" },
-  { type: "upload", title: "API v2 Migration Guide.md", user: "Nia R.", time: "3h ago", icon: "Upload" },
-];
-
 export const promptSuggestions = [
   "What decisions were made in last week's engineering meeting?",
   "Show me our authentication architecture.",
@@ -156,39 +124,6 @@ export const searchResults = [
     source: "Product Roadmap.pdf",
   },
 ];
-
-export const analytics = {
-  queriesOverTime: [
-    { month: "Sep", queries: 620 },
-    { month: "Oct", queries: 890 },
-    { month: "Nov", queries: 1140 },
-    { month: "Dec", queries: 1310 },
-    { month: "Jan", queries: 1720 },
-    { month: "Feb", queries: 2140 },
-  ],
-  knowledgeGrowth: [
-    { month: "Sep", docs: 210, chunks: 6400 },
-    { month: "Oct", docs: 340, chunks: 9800 },
-    { month: "Nov", docs: 510, chunks: 14200 },
-    { month: "Dec", docs: 720, chunks: 20100 },
-    { month: "Jan", docs: 980, chunks: 28900 },
-    { month: "Feb", docs: 1284, chunks: 38600 },
-  ],
-  docTypes: [
-    { name: "PDF", value: 42 },
-    { name: "MD", value: 28 },
-    { name: "DOCX", value: 16 },
-    { name: "CSV", value: 8 },
-    { name: "TXT", value: 6 },
-  ],
-  topTopics: [
-    { topic: "Authentication", queries: 428 },
-    { topic: "Architecture", queries: 391 },
-    { topic: "Roadmap", queries: 284 },
-    { topic: "Onboarding", queries: 219 },
-    { topic: "Pricing", queries: 174 },
-  ],
-};
 
 export const graphData = {
   nodes: [

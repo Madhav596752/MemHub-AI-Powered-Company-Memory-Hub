@@ -14,6 +14,10 @@ model Company {
   updatedAt DateTime   @updatedAt
   documents Document[]
   users     User[]
+  // Module 9.4: knowledge-base version. Advanced (atomically, in PostgreSQL) whenever what questions and graph
+  // reads can return for this company has changed. It is part of every knowledge cache key.
+  knowledgeVersion Int               @default(0)
+  knowledgeChanges KnowledgeChange[]
 }
 
 model User {
@@ -27,6 +31,7 @@ model User {
   updatedAt DateTime   @updatedAt
   company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   documents Document[] @relation("DocumentUploader")
+  refreshTokens RefreshToken[]
 
   @@index([companyId])
 }
@@ -46,6 +51,7 @@ model Document {
   updatedAt         DateTime @updatedAt
   company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   uploader          User?    @relation("DocumentUploader", fields: [uploadedBy], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  graphIngestion    GraphIngestion?
 
   @@index([companyId])
   @@index([uploadedBy])
@@ -54,4 +60,58 @@ model Document {
 enum Role {
   ADMIN
   MEMBER
+}
+
+// Outcome of the last knowledge-graph processing of a document (NLP -> Neo4j).
+// status: processed | failed | skipped. The graph itself lives in Neo4j; this row only records
+// whether it worked, so failures are visible and can be retried.
+model GraphIngestion {
+  documentId        String    @id
+  companyId         String
+  status            String
+  entityCount       Int       @default(0)
+  relationshipCount Int       @default(0)
+  errorCode         String?
+  pipeline          String?
+  processedAt       DateTime?
+  updatedAt         DateTime  @updatedAt
+  document          Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+}
+
+// One row per issued refresh token. All tokens of one login share a familyId (= one session).
+// Only a keyed hash of the token is stored (never the token itself). A token is single-use:
+// refreshing marks the row revoked (revokeReason = 'rotated') and creates the next row in the same family.
+// revokeReason: rotated | logout | logout-all | reuse-detected
+model RefreshToken {
+  id           String    @id
+  familyId     String
+  userId       String
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  revokeReason String?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+// Module 9.4: one row per knowledge change that is IN FLIGHT (upload, delete, reindex, graph reprocess).
+// While an unexpired row exists the company's knowledge stores (PostgreSQL, ChromaDB, Neo4j) may disagree
+// with each other, so the answer and graph caches are bypassed for that company. The row is removed when the
+// change settles. A crashed process leaves it behind; it simply expires, and the first reader that finds it
+// expired advances the version (the crashed change may have written something) and deletes it.
+model KnowledgeChange {
+  id        String   @id
+  companyId String
+  operation String
+  startedAt DateTime @default(now())
+  expiresAt DateTime
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, expiresAt])
 }

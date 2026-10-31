@@ -32,10 +32,14 @@ function indexTimeoutMs() {
   return Number.isInteger(value) && value > 0 ? value : 300000 // embedding a big document takes a while
 }
 
+// The shared secret, trimmed exactly like the Python service trims its own copy: a stray space or
+// line ending in one of the two values must not be the reason for a 401.
+export const embeddingToken = () => (process.env.EMBEDDING_SERVICE_TOKEN || '').trim()
+
 // Headers for the Python service. The shared secret proves the call comes from this backend
 // (the service refuses everything else). It is never logged.
 export function serviceHeaders(hasBody = true) {
-  const headers = { 'X-Internal-Token': process.env.EMBEDDING_SERVICE_TOKEN || '' }
+  const headers = { 'X-Internal-Token': embeddingToken() }
   if (hasBody) headers['Content-Type'] = 'application/json'
   return headers
 }
@@ -60,7 +64,11 @@ async function call(method, path, body, timeoutMs) {
   if (!res.ok) {
     console.error(`Vector service error (${method} ${path}) ${res.status}:`, data?.detail)
     if (res.status === 401 || res.status === 403) {
-      throw new RagError('The search service rejected this server. An administrator must check EMBEDDING_SERVICE_TOKEN.', 502, 'VECTOR_SERVICE_MISCONFIGURED')
+      // Tell "we sent no token" (our .env) apart from "we sent a different token" (the Python side).
+      if (!embeddingToken()) {
+        throw new RagError('EMBEDDING_SERVICE_TOKEN is not set in server/.env, so the search service refuses this server.', 502, 'VECTOR_SERVICE_MISCONFIGURED')
+      }
+      throw new RagError('The search service rejected this server. EMBEDDING_SERVICE_TOKEN must have the same value in server/.env and for the embedding service.', 502, 'VECTOR_SERVICE_MISCONFIGURED')
     }
     if (data?.detail === 'embedding_failed') {
       throw new RagError('The embedding service could not process the text. Please try again later.', 503, 'EMBEDDING_FAILED')

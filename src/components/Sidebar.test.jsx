@@ -68,3 +68,19 @@ describe("Sidebar user display + logout", () => {
     expect(container.querySelector("aside").className).toContain("h-dvh");
   });
 });
+
+describe("Logout revokes the session on the server", () => {
+  it("sends the refresh token to POST /api/auth/logout, and still logs out locally if that request fails", async () => {
+    renderApp();
+    fireEvent.click(await screen.findByText("Zoya Khan"));
+    fireEvent.click(screen.getByText("Logout"));
+    await waitFor(() => expect(screen.getByText("LOGIN PAGE")).toBeTruthy());
+
+    const logoutCall = globalThis.fetch.mock.calls.find(([url]) => String(url).endsWith("/api/auth/logout"));
+    expect(logoutCall).toBeTruthy();
+    expect(logoutCall[1].method).toBe("POST");
+    expect(JSON.parse(logoutCall[1].body)).toEqual({ refreshToken: "refresh-456" });
+    // fakeBackend() answers 404 for it: the local logout must not depend on the server's answer
+    expect(localStorage.getItem("memhub_refresh_token")).toBeNull();
+  });
+});

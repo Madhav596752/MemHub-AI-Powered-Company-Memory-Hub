@@ -30,3 +30,8 @@ server/embedding-service/chroma_data/
 server/embedding-service/chroma_test_data/
 server/embedding-service/.venv/
 __pycache__/
+
+# Python / tests
+*.pyc
+.pytest_cache/
+.venv/

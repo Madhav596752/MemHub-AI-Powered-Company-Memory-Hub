@@ -16,7 +16,7 @@ async function post(path, body) {
   try {
     res = await fetch(`${serviceUrl()}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': process.env.EMBEDDING_SERVICE_TOKEN || '' },
+      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': (process.env.EMBEDDING_SERVICE_TOKEN || '').trim() },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
@@ -26,6 +26,12 @@ async function post(path, body) {
 
   const data = await res.json().catch(() => null)
   if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      const hint = (process.env.EMBEDDING_SERVICE_TOKEN || '').trim()
+        ? 'EMBEDDING_SERVICE_TOKEN differs between server/.env and the embedding service'
+        : 'EMBEDDING_SERVICE_TOKEN is not set in server/.env'
+      throw new Error(`Embedding service rejected this server (${res.status}): ${hint}`)
+    }
     throw new Error(`Embedding service error ${res.status}: ${data?.detail || 'unknown error'}`)
   }
 

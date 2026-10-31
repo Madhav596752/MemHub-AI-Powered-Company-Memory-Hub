@@ -195,3 +195,32 @@ test('every call to the Python service carries the shared token, and it is never
   assert.ok(seen.every((r) => r.token === 'token-for-header-test'))
   assert.ok(seen.every((r) => !r.raw.includes('token-for-header-test')))
 })
+
+test('401 while NO token is configured says so (our .env), 401 with a token says the values differ; no value is leaked', async () => {
+  const saved = process.env.EMBEDDING_SERVICE_TOKEN
+  try {
+    delete process.env.EMBEDDING_SERVICE_TOKEN
+    const none = await failureWith(401, { detail: 'missing internal token' })
+    assert.equal(none.code, 'VECTOR_SERVICE_MISCONFIGURED')
+    assert.match(none.message, /not set in server\/\.env/)
+    process.env.EMBEDDING_SERVICE_TOKEN = '  padded-secret-value  '
+    const some = await failureWith(401, { detail: 'invalid internal token' })
+    assert.match(some.message, /same value/)
+    assert.doesNotMatch(some.message, /padded-secret-value/)
+  } finally {
+    if (saved === undefined) delete process.env.EMBEDDING_SERVICE_TOKEN
+    else process.env.EMBEDDING_SERVICE_TOKEN = saved
+  }
+})
+
+test('the token is trimmed before it is sent (a stray space must not cause a 401)', async () => {
+  const saved = process.env.EMBEDDING_SERVICE_TOKEN
+  process.env.EMBEDDING_SERVICE_TOKEN = '  trim-me-token \r'
+  try {
+    const { embeddingToken } = await import('./vectorStore.js')
+    assert.equal(embeddingToken(), 'trim-me-token')
+  } finally {
+    if (saved === undefined) delete process.env.EMBEDDING_SERVICE_TOKEN
+    else process.env.EMBEDDING_SERVICE_TOKEN = saved
+  }
+})

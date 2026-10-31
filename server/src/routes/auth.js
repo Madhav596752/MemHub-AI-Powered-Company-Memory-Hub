@@ -3,6 +3,8 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import prisma from '../prisma.js'
 import { requireAuth } from '../middleware/auth.js'
+import { issueRefreshToken, rotateRefreshToken, revokeSessionByToken, revokeAllSessionsForUser } from '../utils/refreshTokens.js'
+import { registerLimiter, loginLimiter, loginAccountLimiter, refreshLimiter, logoutLimiter } from '../middleware/rateLimit.js'
 
 const router = Router()
 
@@ -20,13 +22,8 @@ function createAccessToken(user) {
   )
 }
 
-// Refresh token only carries the userId. The role/companyId are
-// read fresh from the database when a new access token is issued.
-function createRefreshToken(user) {
-  return jwt.sign({ userId: user.id }, process.env.JWT_REFRESH_SECRET, {
-    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
-  })
-}
+// Refresh tokens are created and tracked in utils/refreshTokens.js (issueRefreshToken / rotateRefreshToken).
+// They only carry the userId (+ session ids); role/companyId are read fresh from the database on refresh.
 
 // Never send the password hash to the client
 function publicUser(user) {
@@ -44,6 +41,31 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
+// bcrypt only uses the first 72 BYTES of a password, so the limit is in bytes (a 40-character password
+// of 2-byte characters would otherwise be silently truncated).
+const MAX_PASSWORD_BYTES = 72
+const COMMON_PASSWORDS = new Set([
+  'password', 'password1', 'password123', '12345678', '123456789', '1234567890', 'qwertyui', 'qwerty123',
+  'iloveyou', 'admin123', 'welcome1', 'letmein1', '11111111', '00000000', 'abcd1234', 'abc12345',
+])
+
+// Returns an error message, or null when the password is acceptable.
+function passwordProblem(password, email) {
+  if (password.length < 8) return 'Password must be at least 8 characters'
+  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) return 'Password must be at most 72 bytes long'
+  if (!password.trim()) return 'Password cannot be only spaces'
+  const lower = password.toLowerCase()
+  if (COMMON_PASSWORDS.has(lower) || lower === email) return 'This password is too common. Please choose a different one'
+  return null
+}
+
+// Used when the email is unknown, so a failed login takes as long as a wrong password (no timing oracle).
+let dummyHash
+function getDummyHash() {
+  dummyHash ??= bcrypt.hash(`dummy-${Math.random()}`, SALT_ROUNDS)
+  return dummyHash
+}
+
 // ---------- POST /api/auth/register ----------
 // Two ways to register:
 //   1. No inviteCode: creates a NEW company and makes this person its ADMIN.
@@ -51,7 +73,7 @@ function isValidEmail(email) {
 //      joins that EXISTING company as a MEMBER, so the whole team shares one companyId.
 // role is NEVER accepted from the client. The invite code is a random UUID, so it
 // cannot be guessed; typing a company name never joins an existing company.
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, async (req, res) => {
   try {
     const { name, email, password, companyName, inviteCode } = req.body || {}
 
@@ -64,11 +86,12 @@ router.post('/register', async (req, res) => {
     if (typeof email !== 'string' || !isValidEmail(email.trim())) {
       return res.status(400).json({ message: 'A valid email is required' })
     }
-    if (typeof password !== 'string' || password.length < 8) {
+    if (typeof password !== 'string') {
       return res.status(400).json({ message: 'Password must be at least 8 characters' })
     }
-    if (password.length > 72) {
-      return res.status(400).json({ message: 'Password must be at most 72 characters' })
+    const problem = passwordProblem(password, email.trim().toLowerCase())
+    if (problem) {
+      return res.status(400).json({ message: problem })
     }
     if (!joining && (typeof companyName !== 'string' || !companyName.trim())) {
       return res.status(400).json({ message: 'Company name is required' })
@@ -133,7 +156,7 @@ router.post('/register', async (req, res) => {
 
     res.status(201).json({
       accessToken: createAccessToken(user),
-      refreshToken: createRefreshToken(user),
+      refreshToken: await issueRefreshToken(user),
       user: publicUser(user),
     })
   } catch (err) {
@@ -147,12 +170,15 @@ router.post('/register', async (req, res) => {
 })
 
 // ---------- POST /api/auth/login ----------
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, loginAccountLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {}
 
     if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       return res.status(400).json({ message: 'Email and password are required' })
+    }
+    if (email.length > 254 || password.length > 1000) {
+      return res.status(400).json({ message: 'Email or password is too long' })
     }
 
     const user = await prisma.user.findUnique({
@@ -162,14 +188,14 @@ router.post('/login', async (req, res) => {
 
     // Same message for unknown email and wrong password,
     // so nobody can find out which emails are registered
-    const passwordOk = user ? await bcrypt.compare(password, user.password) : false
+    const passwordOk = await bcrypt.compare(password, user ? user.password : await getDummyHash())
     if (!user || !passwordOk) {
       return res.status(401).json({ message: 'Invalid email or password' })
     }
 
     res.json({
       accessToken: createAccessToken(user),
-      refreshToken: createRefreshToken(user),
+      refreshToken: await issueRefreshToken(user),
       user: publicUser(user),
     })
   } catch (err) {
@@ -179,33 +205,58 @@ router.post('/login', async (req, res) => {
 })
 
 // ---------- POST /api/auth/refresh ----------
-router.post('/refresh', async (req, res) => {
+// Body: { refreshToken }. Refresh tokens are single-use: the response contains a NEW refreshToken that
+// the client must store (the old one stops working). Every failure (bad, expired, revoked, replayed,
+// legacy token) is the same 401 so nothing is revealed about why.
+router.post('/refresh', refreshLimiter, async (req, res) => {
   try {
     const { refreshToken } = req.body || {}
     if (typeof refreshToken !== 'string' || !refreshToken) {
       return res.status(400).json({ message: 'Refresh token is required' })
     }
 
-    let payload
-    try {
-      payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, { algorithms: ['HS256'] })
-    } catch {
+    const result = await rotateRefreshToken(refreshToken)
+    if (!result.ok) {
+      if (result.reason === 'reuse-detected') {
+        console.warn('Refresh token reuse detected: session revoked')
+      }
       return res.status(401).json({ message: 'Invalid or expired refresh token' })
     }
 
-    if (typeof payload.userId !== 'string' || !payload.userId) {
-      return res.status(401).json({ message: 'Invalid or expired refresh token' })
-    }
-
-    // Read the user again so role/company changes (or a deleted user) are respected
-    const user = await prisma.user.findUnique({ where: { id: payload.userId } })
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid or expired refresh token' })
-    }
-
-    res.json({ accessToken: createAccessToken(user) })
+    res.json({ accessToken: createAccessToken(result.user), refreshToken: result.refreshToken })
   } catch (err) {
     console.error('Refresh error:', err)
+    res.status(500).json({ message: 'Something went wrong' })
+  }
+})
+
+// ---------- POST /api/auth/logout ----------
+// Body: { refreshToken }. Revokes the session that token belongs to (only that session). No access token
+// is required, so logout still works after the access token expired. Always answers 200 for any string
+// (valid, expired, unknown or already revoked) so it is safe to call twice.
+// The short-lived access token that was already issued stays valid until it expires (see JWT_ACCESS_EXPIRES_IN).
+router.post('/logout', logoutLimiter, async (req, res) => {
+  try {
+    const { refreshToken } = req.body || {}
+    if (typeof refreshToken !== 'string' || !refreshToken) {
+      return res.status(400).json({ message: 'Refresh token is required' })
+    }
+    await revokeSessionByToken(refreshToken)
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Logout error:', err)
+    res.status(500).json({ message: 'Something went wrong' })
+  }
+})
+
+// ---------- POST /api/auth/logout-all ----------
+// Revokes every session of the signed-in user (all devices). Other users are never affected.
+router.post('/logout-all', logoutLimiter, requireAuth, async (req, res) => {
+  try {
+    await revokeAllSessionsForUser(req.user.userId)
+    res.json({ success: true })
+  } catch (err) {
+    console.error('Logout-all error:', err)
     res.status(500).json({ message: 'Something went wrong' })
   }
 })

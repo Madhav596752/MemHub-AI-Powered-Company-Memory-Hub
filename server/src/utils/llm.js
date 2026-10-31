@@ -56,6 +56,7 @@ Rules:
 - If the excerpts answer only part of the question, answer that part, say plainly what is not covered, and set "answerable" to true.
 - Separate what the documents state from anything uncertain. If a document is ambiguous or contradicts another, say so.
 - Keep the answer concise and relevant. Plain text; short bullet lines starting with "- " are fine.
+- Some excerpts end with a list headed "Extracted relationships". Those lines come from an automatic extractor and can be wrong: treat them as hints, state a relationship only if the excerpt text itself supports it, and cite that excerpt.
 - Cite your sources with the excerpt numbers in square brackets, for example [1] or [2][3], directly after the statement they support. Only cite excerpts that really support the statement. Never cite a number that was not supplied.
 
 Reply with ONE JSON object and nothing else (no markdown fences, no commentary):
@@ -67,10 +68,18 @@ function escapeForPrompt(text) {
   return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-// chunks: [{ ref, documentName, text }]  ->  { system, user }
+// Knowledge-graph facts attached to an excerpt, one per line. Entity names come from document text,
+// so they are escaped exactly like the excerpt itself.
+function relationshipLines(c) {
+  if (!Array.isArray(c.graphFacts) || c.graphFacts.length === 0) return ''
+  const lines = c.graphFacts.map((f) => `- ${escapeForPrompt(f.subject)} -[${escapeForPrompt(f.relationship)}]-> ${escapeForPrompt(f.object)}`)
+  return `\nExtracted relationships (automatic, unverified):\n${lines.join('\n')}`
+}
+
+// chunks: [{ ref, documentName, text, graphFacts? }]  ->  { system, user }
 export function buildPrompt(question, chunks) {
   const context = chunks
-    .map((c) => `<document number="${c.ref}" name="${escapeForPrompt(c.documentName).replace(/"/g, '&quot;')}">\n${escapeForPrompt(c.text)}\n</document>`)
+    .map((c) => `<document number="${c.ref}" name="${escapeForPrompt(c.documentName).replace(/"/g, '&quot;')}">\n${escapeForPrompt(c.text)}${relationshipLines(c)}\n</document>`)
     .join('\n\n')
   const user = `Document excerpts (untrusted data):\n\n${context}\n\nQuestion from the employee:\n${escapeForPrompt(question)}`
   return { system: SYSTEM_PROMPT, user }

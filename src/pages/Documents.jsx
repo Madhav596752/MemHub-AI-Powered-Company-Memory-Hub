@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import EmptyState from "@/components/EmptyState";
 import { api } from "@/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 const typeCls = {
   PDF: "bg-red-500/10 text-red-400 border-red-500/20",
@@ -24,6 +25,8 @@ function formatDate(iso) {
 }
 
 export default function Documents() {
+  // Delete and re-index are administrator-only on the server; members simply don't see those controls.
+  const isAdmin = Boolean(useAuth()?.isAdmin);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -77,8 +80,8 @@ export default function Documents() {
         toast.success(`"${data.document.originalName}" uploaded and indexed`);
       } else {
         toast.error(
-          `"${data.document.originalName}" was saved but is NOT searchable yet. ${data.indexing?.message || "Indexing failed."}`,
-          { duration: 15000, action: { label: "Retry", onClick: () => reindexDocument(data.document) } }
+          `"${data.document.originalName}" was saved but is NOT searchable yet. ${data.indexing?.message || "Indexing failed."}${isAdmin ? "" : " Ask an administrator to re-index it."}`,
+          { duration: 15000, ...(isAdmin ? { action: { label: "Retry", onClick: () => reindexDocument(data.document) } } : {}) }
         );
       }
       await loadDocuments();
@@ -242,15 +245,17 @@ export default function Documents() {
                         >
                           <ExternalLink className="h-4 w-4" />
                         </a>
-                        <button
-                          type="button"
-                          onClick={() => deleteDocument(d)}
-                          disabled={deletingId === d.id}
-                          title="Delete"
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                        >
-                          {deletingId === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                        </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => deleteDocument(d)}
+                            disabled={deletingId === d.id}
+                            title="Delete"
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                          >
+                            {deletingId === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -295,15 +300,19 @@ export default function Documents() {
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" className="rounded-lg" onClick={() => reindexDocument(selected)} title="Rebuild the searchable index for this document">
-                <RefreshCw className="h-4 w-4 mr-2" /> Re-index
-              </Button>
+              {isAdmin && (
+                <Button variant="outline" className="rounded-lg" onClick={() => reindexDocument(selected)} title="Rebuild the searchable index for this document">
+                  <RefreshCw className="h-4 w-4 mr-2" /> Re-index
+                </Button>
+              )}
               <a href={selected.cloudinaryUrl} target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" className="rounded-lg"><ExternalLink className="h-4 w-4 mr-2" /> Open</Button>
               </a>
-              <Button variant="destructive" className="rounded-lg" onClick={() => deleteDocument(selected)} disabled={deletingId === selected.id}>
-                <Trash2 className="h-4 w-4 mr-2" /> Delete
-              </Button>
+              {isAdmin && (
+                <Button variant="destructive" className="rounded-lg" onClick={() => deleteDocument(selected)} disabled={deletingId === selected.id}>
+                  <Trash2 className="h-4 w-4 mr-2" /> Delete
+                </Button>
+              )}
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Sparkles, Send, Paperclip, Mic, Plus, Trash2, Calendar, ShieldCheck, Network, History, Copy, ThumbsUp, ThumbsDown, AlertCircle, SearchX } from "lucide-react";
 import SourceCard from "@/components/SourceCard";
 import { Button } from "@/components/ui/button";
@@ -45,12 +46,14 @@ function inline(text) {
 function toCard(src) {
   const ext = (src.documentName.split(".").pop() || "").toUpperCase().slice(0, 4);
   const range = src.startChar != null && src.endChar != null ? ` · chars ${src.startChar}–${src.endChar}` : "";
+  // Graph evidence is a single sentence with no stored offsets: say what it is, show no range.
+  const facts = (src.graphFacts || []).map((f) => `${f.subject} → ${f.relationship} → ${f.object}`).join("; ");
   return {
-    id: `${src.documentId}:${src.chunkIndex}`,
+    id: `${src.documentId}:${src.chunkIndex}:${src.ref}`,
     ref: src.ref,
     type: ext || "DOC",
     title: src.documentName,
-    meta: `chunk ${src.chunkIndex + 1}${range}`,
+    meta: `${src.kind === "graph" ? "graph evidence · " : ""}chunk ${src.chunkIndex + 1}${range}${facts ? ` · ${facts}` : ""}`,
     excerpt: src.text,
   };
 }
@@ -70,10 +73,13 @@ export default function AIAssistant() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const handoffDone = useRef(false);
 
-  const ask = async (e) => {
-    e?.preventDefault();
-    const q = question.trim();
+  // Shared by the composer and by a question handed over from the Dashboard.
+  const submitQuestion = async (text) => {
+    const q = text.trim();
     if (!q || loading) return;
     setError("");
     setLoading(true);
@@ -84,7 +90,7 @@ export default function AIAssistant() {
       const data = await api("/api/ask", { method: "POST", body: JSON.stringify({ question: q }) });
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: data.answer, grounded: data.grounded, reason: data.reason, sources: (data.sources || []).map(toCard) },
+        { role: "assistant", content: data.answer, grounded: data.grounded, reason: data.reason, graphUnavailable: data.retrieval?.graph?.status === "unavailable", sources: (data.sources || []).map(toCard) },
       ]);
     } catch (err) {
       setError(err.message || "Something went wrong");
@@ -94,6 +100,23 @@ export default function AIAssistant() {
       setLoading(false);
     }
   };
+
+  const ask = (e) => {
+    e?.preventDefault();
+    return submitQuestion(question);
+  };
+
+  // The Dashboard's "Ask MemHub" box navigates here with { state: { question } }. Ask it once through
+  // the normal authenticated flow, then clear the navigation state so a refresh or "back" does not
+  // send it again. The ref also stops React StrictMode's double effect from sending it twice.
+  useEffect(() => {
+    const handed = location.state?.question;
+    if (typeof handed !== "string" || handoffDone.current) return;
+    handoffDone.current = true;
+    navigate(location.pathname, { replace: true, state: null });
+    submitQuestion(handed.slice(0, MAX_QUESTION_LENGTH));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -190,6 +213,10 @@ export default function AIAssistant() {
                         </div>
                       ) : (
                         <div className="prose-invert max-w-none">{renderMarkdown(m.content)}</div>
+                      )}
+
+                      {m.graphUnavailable && (
+                        <p className="mt-3 text-xs text-muted-foreground font-mono">The knowledge graph was unavailable, so this answer uses document search only.</p>
                       )}
 
                       {m.sources?.length > 0 && (

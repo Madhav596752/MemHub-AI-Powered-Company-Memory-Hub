@@ -23,8 +23,15 @@ async function send(path, options = {}, token) {
   return { res, data };
 }
 
-// Ask the backend for a new access token using the refresh token
-async function refreshAccessToken() {
+// Ask the backend for a new access token using the refresh token.
+// Refresh tokens are single-use: the server answers with a NEW refresh token that replaces the stored one.
+// Because of that, only ONE refresh may run at a time:
+//   - inside this tab, parallel 401s share one in-flight request;
+//   - across tabs, a Web Lock serialises refreshes, and a caller that waited re-uses the access token the
+//     other tab just stored instead of sending the (already used) refresh token again.
+let refreshInFlight = null;
+
+async function requestNewTokens() {
   const refreshToken = localStorage.getItem(REFRESH_KEY);
   if (!refreshToken) return null;
 
@@ -41,7 +48,27 @@ async function refreshAccessToken() {
   if (!res.ok) return null;
 
   localStorage.setItem(ACCESS_KEY, data.accessToken);
+  // Rotation: keep the newest refresh token (older servers do not send one).
+  if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
   return data.accessToken;
+}
+
+function refreshAccessToken(staleAccessToken) {
+  if (!refreshInFlight) {
+    const run = async () => {
+      // Another tab may have refreshed while we waited for the lock.
+      const current = localStorage.getItem(ACCESS_KEY);
+      if (current && current !== staleAccessToken) return current;
+      return requestNewTokens();
+    };
+    const locked = typeof navigator !== "undefined" && navigator.locks?.request
+      ? navigator.locks.request("memhub-token-refresh", run)
+      : run();
+    refreshInFlight = Promise.resolve(locked).finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
 }
 
 // api("/api/auth/login", { method: "POST", body: JSON.stringify({...}) })
@@ -54,7 +81,7 @@ export async function api(path, options = {}) {
   // Login/register 401s mean "wrong credentials", not "expired token"
   const isAuthForm = path === "/api/auth/login" || path === "/api/auth/register";
   if (res.status === 401 && token && !isAuthForm) {
-    const newToken = await refreshAccessToken();
+    const newToken = await refreshAccessToken(token);
     if (newToken) {
       ({ res, data } = await send(path, options, newToken));
     }
